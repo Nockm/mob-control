@@ -1,8 +1,20 @@
 //
 // Configuration.
 //
-const ADDRESS = 'localhost:1234';
+const ADDRESS = `${new URL(window.location.href).hostname}/mobcontrol/`;
 const UPDATES_PER_SECOND = 60; // Set to 60 at some point.
+
+//
+// Logging.
+//
+const logElement = document.getElementById('log');
+function log(line) {
+    if (logElement) {
+        logElement.innerHTML = line + '\n' + logElement.innerHTML;
+    }
+}
+
+log(UPDATES_PER_SECOND);
 
 //
 // Load the canvas, context.
@@ -18,6 +30,10 @@ hitboxImage.addEventListener('load', function() {
     hitboxContext.drawImage(hitboxImage, 0, 0, hitboxCanvas.width, hitboxCanvas.height);
 }, false);
 hitboxImage.src = './layout_logical.png';
+
+window.addEventListener('resize', function() {
+    console.log('resizing');
+})
 
 //
 // Define the buttons.
@@ -45,31 +61,63 @@ const buttonColours = {
 //
 const buttonIds = Object.values(buttonColours);
 const buttonState = {};
-buttonIds.forEach(buttonId => { buttonState[buttonId] = false; })
+buttonIds.forEach(buttonId => { buttonState[buttonId] = false; });
+const pointerIdMapToButtonId = {};
 
 //
-// Update state when button press and release.
-//
-function onCanvasInteraction(ev, activate) {
-    const imageX = (ev.clientX / hitboxCanvas.scrollWidth) * hitboxCanvas.width;
-    const imageY = (ev.clientY / hitboxCanvas.scrollHeight) * hitboxCanvas.height;
-    var imagePixel = hitboxContext.getImageData(imageX, imageY, 1, 1).data;
-    var imagePixelString = imagePixel.join(',');
-    var buttonId = buttonColours[imagePixelString];
-    if (buttonId) { buttonState[buttonId] = activate; }
-    console.log(imagePixelString);
-    console.log(buttonId);
-}
-
-hitboxCanvas.onmousedown = (ev) => { onCanvasInteraction(ev, true); }
-hitboxCanvas.ontouchend = (ev) => { onCanvasInteraction(ev, false); }
-hitboxCanvas.onmousedown = (ev) => { onCanvasInteraction(ev, true); }
-hitboxCanvas.onmouseup = (ev) => { onCanvasInteraction(ev, false); }
-
-//
-// Transmit padState on regular intervals.
+// State transmission.
 //
 const socket = new WebSocket(`ws://${ADDRESS}`);
-setInterval(() => {
+function sendState() {
     socket.send(JSON.stringify(buttonState, null, 4));
-}, 1000 / UPDATES_PER_SECOND);
+}
+
+//
+// Send state at regular intervals.
+//
+setInterval(sendState, 1000 / UPDATES_PER_SECOND);
+
+//
+// Update state on interaction.
+//
+function onCanvasInteraction(ev, activate) {
+    //log(JSON.stringify(ev));
+    const imageX = (ev.clientX / hitboxCanvas.scrollWidth) * hitboxCanvas.width;
+    const imageY = (ev.clientY / hitboxCanvas.scrollHeight) * hitboxCanvas.height;
+    //log(imageX, imageY)
+    log(hitboxCanvas.width, hitboxCanvas.height)
+
+    const imagePixel = hitboxContext.getImageData(imageX, imageY, 1, 1).data;
+    const imagePixelString = imagePixel.slice(0, 4).join(',');
+    //log(imagePixelString)
+
+    const buttonId = buttonColours[imagePixelString];
+    if (buttonId) {
+        buttonState[buttonId] = activate;
+        pointerIdMapToButtonId[ev.pointerId] = buttonId;
+        log("Button down: "+buttonId);
+        sendState();
+    }
+
+
+}
+
+hitboxCanvas.onpointerdown = (ev) => { onCanvasInteraction(ev, true); };
+
+hitboxCanvas.onpointerup = (ev) => {
+    log("Button up: "+pointerIdMapToButtonId[ev.pointerId]);
+    buttonState[pointerIdMapToButtonId[ev.pointerId]] = false;
+    delete pointerIdMapToButtonId[ev.pointerId];
+    sendState();
+};
+
+
+// const axisColours = {
+//     '0,255,242,255': 'AXIS_LEFT',
+//     '255,0,0,255': 'AXIS_RIGHT',
+// };
+
+// const triggerColours = {
+//     '0,255,242,255': 'AXIS_TRIGGERLEFT',
+//     '255,0,0,255': 'AXIS_TRIGGERRIGHT',
+// };
